@@ -305,6 +305,7 @@ local function poll_deaths(now)
             local isDead = pt.death_status[status] == true
             if tracker:observe(serverId, isDead, now) == 'died' then
                 chat(('"%s" defeated -> respawn timer started.'):format(tracker:label(serverId)))
+                persist_watch()  -- save popAt so the timer survives a reload
             end
         end
         -- If idx is nil the mob is out of render range; we simply can't see it
@@ -361,8 +362,12 @@ end
 ashita.events.register('load', 'pt_load', function()
     cfg = settings.load(default_settings)
     tracker = Tracker.new({ defaultRespawn = cfg.defaultRespawn })
-    tracker:importWatch(cfg.watch)
-    chat(('loaded. tracking %d mob(s). /pt help for commands.'):format(tracker:count()))
+    -- Pass wall-clock now so in-progress timers whose pop is still ahead are
+    -- restored (and stale, already-popped ones are dropped).
+    tracker:importWatch(cfg.watch, os.time())
+    local active = #tracker:rows(os.time())
+    chat(('loaded. tracking %d mob(s)%s. /pt help for commands.'):format(
+        tracker:count(), active > 0 and (', '..active..' timer(s) restored') or ''))
 end)
 
 ashita.events.register('command', 'pt_command', function(e)
@@ -374,12 +379,14 @@ local last_poll = 0
 
 ashita.events.register('d3d_present', 'pt_present', function()
     if not tracker then return end
-    local now = os.clock()
-    if now - last_poll >= POLL_INTERVAL then
-        last_poll = now
+    local now = os.time()       -- absolute wall clock: all timer math & persistence
+    local mono = os.clock()     -- monotonic: only used to throttle polling
+    if mono - last_poll >= POLL_INTERVAL then
+        last_poll = mono
         poll_deaths(now)
     end
-    tracker:update(now)
+    local removed = tracker:update(now)
+    if #removed > 0 then persist_watch() end  -- clear popAt of expired timers
     render(now)
 end)
 

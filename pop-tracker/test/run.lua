@@ -197,19 +197,62 @@ do
     t:track(111, { mobName = 'Leech', respawn = 240 })
     t:rename(111, 'East Leech')
     t:track(222, { mobName = 'Crab' })
-    t:observe(111, true, 0)  -- transient timer must NOT be exported
+    t:observe(111, true, 1000)  -- absolute kill time -> popAt = 1240
     local dump = t:exportWatch()
     check(dump['111'] ~= nil, 'exported by string key')
     eq(dump['111'].name, 'East Leech', 'exports custom name')
     eq(dump['111'].respawn, 240, 'exports respawn')
-    check(dump['111'].diedAt == nil, 'does not export transient timer fields')
+    eq(dump['111'].popAt, 1240, 'exports absolute popAt (kill + respawn)')
+    check(dump['111'].diedAt == nil, 'does not export other transient fields (diedAt)')
 
+    -- import without `now` -> watch list restored, timers NOT reconstructed
     local t2 = Tracker.new()
     t2:importWatch(dump)
     eq(t2:count(), 2, 'imported both')
     eq(t2:label(111), 'East Leech', 'name survived round-trip')
     eq(t2.watch[111].respawn, 240, 'respawn survived round-trip')
-    eq(#t2:rows(0), 0, 'no active timers after import')
+    eq(#t2:rows(0), 0, 'no active timers when now not supplied')
+end
+
+print('reload restores in-progress timers whose pop is in the future')
+do
+    local t = Tracker.new({ popDuration = 5 })
+    t:track(1, { mobName = 'NM', respawn = 300 })
+    t:observe(1, true, 10000)            -- killed at absolute t=10000 -> popAt 10300
+    local dump = t:exportWatch()
+
+    -- reload 100s later: pop is still 200s away -> restore the countdown
+    local t2 = Tracker.new({ popDuration = 5 })
+    t2:importWatch(dump, 10100)
+    local rows = t2:rows(10100)
+    eq(#rows, 1, 'future timer restored on load')
+    eq(rows[1].state, 'dead', 'restored as a live countdown')
+    eq(rows[1].text, '3:20', 'remaining computed from saved popAt (10300-10100)')
+    -- restored mob is disarmed: a corpse still lying there is not a new kill
+    eq(t2.watch[1].armed, false, 'restored timer mob stays disarmed')
+
+    -- reload far in the future: pop long gone -> nothing restored
+    local t3 = Tracker.new({ popDuration = 5 })
+    t3:importWatch(dump, 99999)
+    eq(#t3:rows(99999), 0, 'past timer is not restored')
+    check(t3:isTracked(1), 'but the mob is still on the watch list')
+end
+
+print('reload during the pop phase restores the pop line')
+do
+    local t = Tracker.new({ popDuration = 5 })
+    t:track(1, { respawn = 100 })
+    t:observe(1, true, 500)              -- popAt = 600
+    local dump = t:exportWatch()
+    -- reload at 602: popped already, but within the 5s pop window
+    local t2 = Tracker.new({ popDuration = 5 })
+    t2:importWatch(dump, 602)
+    local rows = t2:rows(602)
+    eq(#rows, 1, 'pop line restored within pop window')
+    eq(rows[1].state, 'pop', 'shows pop')
+    -- and it expires on schedule after the pop window
+    t2:update(606)
+    eq(#t2:rows(606), 0, 'expires after popDuration past popAt')
 end
 
 print('imported mobs start disarmed: a corpse on load is not a fresh kill')

@@ -257,28 +257,46 @@ end
 -- persistence helpers (plain tables, so main can hand them to settings.lua)
 ------------------------------------------------------------------------------
 
--- Export only the durable watch fields (not transient timers/index/armed).
+-- Export the durable watch fields plus, for a mob mid-countdown, its absolute
+-- pop time (popAt = wall-clock kill time + respawn).  popAt is what lets an
+-- in-progress timer survive a reload; the other transient fields (index, armed,
+-- diedAt) are intentionally not exported.  Requires popAt to be an absolute
+-- timestamp (os.time()), not a per-session clock.
 function Tracker:exportWatch()
     local out = {}
     for _, id in ipairs(self.order) do
         local w = self.watch[id]
+        local t = self.timers[id]
         out[tostring(id)] = {
             name    = w.name,
             mobName = w.mobName,
             respawn = w.respawn,
+            popAt   = t and t.popAt or nil,
         }
     end
     return out
 end
 
--- Rebuild the watch list from a previously exported table.
-function Tracker:importWatch(t)
+-- Rebuild the watch list from a previously exported table.  `now` is the current
+-- absolute time (os.time()); pass it to restore in-progress timers whose pop is
+-- still ahead (or within the lingering pop phase).  A saved popAt already in the
+-- past is ignored, so old timers don't reappear.
+function Tracker:importWatch(t, now)
     if not t then return end
     for key, w in pairs(t) do
         local id = tonumber(key) or key
         -- armed=false: a restored mob must be observed alive before any death
         -- counts, so corpses already in the zone on load don't start timers.
         self:track(id, { name = w.name, mobName = w.mobName, respawn = w.respawn, armed = false })
+        if w.popAt and now and (w.popAt + self.popDuration) > now then
+            local respawn = w.respawn or self.defaultRespawn
+            self.timers[id] = {
+                diedAt   = respawn and (w.popAt - respawn) or w.popAt,
+                popAt    = w.popAt,
+                popped   = now >= w.popAt,
+                expireAt = w.popAt + self.popDuration,
+            }
+        end
     end
 end
 

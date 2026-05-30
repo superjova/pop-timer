@@ -37,6 +37,10 @@ rename/untrack a mob that has already died (and can't be targeted).
 - **Watch list is persistent.** A mob stays tracked until `/untrack`. The names
   and respawn times you set are saved to `config/settings.lua` and restored on
   load.
+- **Running timers survive a reload.** When a mob dies, its absolute pop time
+  (wall-clock kill time + respawn) is saved. If you reload the addon (or
+  restart) while that pop time is still in the future, the countdown is
+  restored and keeps ticking; timers that already popped are dropped.
 - **The window is headerless and always on.** There's no title bar and no
   toggle to fiddle with: the transparent, draggable window simply isn't drawn
   while there's nothing to show, and appears on its own the moment a tracked mob
