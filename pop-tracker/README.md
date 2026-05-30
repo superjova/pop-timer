@@ -51,6 +51,11 @@ rename/untrack a mob that has already died (and can't be targeted).
 - **Label.** Defaults to the mob's server ID (so you can tell apart three
   identical "Sheep"). Rename it to whatever you like.
 - **No target = nothing happens** on `/track`.
+- **Only witnessed kills start a timer.** A timer begins on an actual
+  alive→dead transition the addon sees. On load, your saved watch list is
+  restored *disarmed*: a mob must be seen alive before its death counts, so a
+  corpse already lying in the zone when you load the addon is **not** mistaken
+  for a fresh kill.
 
 ## Respawn times — important / honest note
 

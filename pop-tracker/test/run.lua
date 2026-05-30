@@ -212,6 +212,28 @@ do
     eq(#t2:rows(0), 0, 'no active timers after import')
 end
 
+print('imported mobs start disarmed: a corpse on load is not a fresh kill')
+do
+    -- Simulate addon load: watch list restored from settings.
+    local t = Tracker.new()
+    t:importWatch({ ['500'] = { mobName = 'NM', respawn = 60 } })
+    -- First poll after load sees the mob ALREADY dead (corpse in the area).
+    eq(t:observe(500, true, 0), nil, 'dead-at-load does NOT start a timer')
+    eq(#t:rows(0), 0, 'no timer line on load')
+    -- Mob repops; we see it alive -> now armed.
+    eq(t:observe(500, false, 30), nil, 'seeing it alive arms it')
+    -- Now an actual witnessed kill starts the timer.
+    eq(t:observe(500, true, 40), 'died', 'witnessed kill after load starts timer')
+    eq(t:rows(40)[1].text, '1:00', 'fresh countdown')
+end
+
+print('/track arms immediately (you can only target a live mob)')
+do
+    local t = Tracker.new()
+    t:track(600, { mobName = 'Worm', respawn = 30 })  -- default armed=true
+    eq(t:observe(600, true, 0), 'died', 'tracked mob death registers right away')
+end
+
 ------------------------------------------------------------------------------
 if failures == 0 then
     print(('\nAll %d checks passed.'):format(tests))

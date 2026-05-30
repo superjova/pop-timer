@@ -74,14 +74,20 @@ end
 ------------------------------------------------------------------------------
 
 -- Add (or update fields of) a watched mob.  `info` keys are all optional:
---   mobName, index, respawn, name
+--   mobName, index, respawn, name, armed
+-- armed controls whether a death can fire immediately.  /track defaults it true
+-- (you can only target a living mob, so the next dead reading is a real kill);
+-- restored/imported mobs pass armed=false so they must be seen alive first and
+-- a corpse already lying in the area on load is NOT mistaken for a fresh kill.
 function Tracker:track(serverId, info)
     assert(serverId ~= nil, 'serverId required')
     info = info or {}
     local w = self.watch[serverId]
     local isNew = not w
     if isNew then
-        w = { armed = true }
+        local armed = true
+        if info.armed ~= nil then armed = info.armed end
+        w = { armed = armed }
         self.watch[serverId] = w
         self.order[#self.order + 1] = serverId
     end
@@ -270,7 +276,9 @@ function Tracker:importWatch(t)
     if not t then return end
     for key, w in pairs(t) do
         local id = tonumber(key) or key
-        self:track(id, { name = w.name, mobName = w.mobName, respawn = w.respawn })
+        -- armed=false: a restored mob must be observed alive before any death
+        -- counts, so corpses already in the zone on load don't start timers.
+        self:track(id, { name = w.name, mobName = w.mobName, respawn = w.respawn, armed = false })
     end
 end
 
