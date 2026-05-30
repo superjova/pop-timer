@@ -18,7 +18,7 @@ Copy the `pop-tracker` folder into `Ashita4/addons/`, then in-game:
 
 | Command | What it does |
 | --- | --- |
-| `/track [mm:ss\|secs]` | Watch the current target. Optional respawn time, e.g. `/track 5:50` or `/track 350`. |
+| `/track [mm:ss\|secs] [name]` | Watch the current target. Optional respawn time then optional name, e.g. `/track 5:50 North Sheep`, `/track 350`, or `/track North Sheep`. |
 | `/untrack [slot\|all]` | Stop watching the current target, a window slot number, or everything. |
 | `/pt rename [slot] <name>` | Rename the current target (or a slot) — e.g. `/pt rename North Sheep`. |
 | `/pt settime [slot] <t>` | Set/replace the respawn time for the target or a slot. |

@@ -11,7 +11,8 @@ local Tracker  = require('tracker')
 --[[
     pop-tracker
     -----------
-    /track [time]            track current target.  time is mm:ss or seconds.
+    /track [time] [name]     track current target.  time is mm:ss or seconds;
+                             anything after (or instead) is an optional name.
     /untrack [slot|all]      untrack current target, a window slot, or everything.
     /poptracker (alias /pt):
         rename [slot] <name> rename current target, or a window slot, to <name>.
@@ -120,7 +121,7 @@ end
 
 local function print_help()
     chat('commands:')
-    chat('  /track [mm:ss|secs]      - watch current target (optional respawn time)')
+    chat('  /track [mm:ss|secs] [name] - watch target (optional time, then optional name)')
     chat('  /untrack [slot|all]      - stop watching target / a slot / everything')
     chat('  /pt rename [slot] <name> - rename current target or a window slot')
     chat('  /pt settime [slot] <t>   - set respawn time for target or a slot')
@@ -131,30 +132,34 @@ local function print_help()
     chat('  /pt debug                - toggle status/death logging')
 end
 
--- /track [time]
+-- /track [time] [name...]
 local function cmd_track(args)
     local idx = get_target_index()
     if not idx then chat('No target. Select a mob, then /track.'); return end
-    local serverId, name, status = read_entity(idx)
+    local serverId, mobName, status = read_entity(idx)
     if not serverId then chat('Could not read target entity.'); return end
 
-    local respawn
-    if args[2] then
-        respawn = Tracker.parseTime(args[2])
-        if not respawn then
-            chat(('Could not parse time "%s" (use mm:ss or seconds).'):format(args[2]))
-            return
-        end
+    -- A leading token that parses as a time is the respawn; everything after it
+    -- (or everything from arg 2 if there's no time) is the optional custom name.
+    local respawn, nameStart
+    if args[2] and Tracker.parseTime(args[2]) then
+        respawn, nameStart = Tracker.parseTime(args[2]), 3
+    else
+        nameStart = 2
     end
+    local name = table.concat(args, ' ', nameStart)
+    if name == '' then name = nil end
 
     local isNew = tracker:track(serverId, {
-        mobName = name,
+        mobName = mobName,
         index   = idx,
         respawn = respawn,
+        name    = name,
     })
     pt.last_status[serverId] = status
     persist_watch()
-    debugf('track id=%d idx=%d status=%s name=%s', serverId, idx, tostring(status), tostring(name))
+    debugf('track id=%d idx=%d status=%s mob=%s name=%s',
+        serverId, idx, tostring(status), tostring(mobName), tostring(name))
     chat(('%s "%s" (id %d)%s'):format(
         isNew and 'Tracking' or 'Updated',
         tracker:label(serverId), serverId,
