@@ -87,7 +87,9 @@ function Tracker:track(serverId, info)
     if isNew then
         local armed = true
         if info.armed ~= nil then armed = info.armed end
-        w = { armed = armed }
+        -- seenAlive mirrors the initial armed state: /track targets a live mob
+        -- (true); imported/restored mobs must be re-confirmed alive (false).
+        w = { armed = armed, seenAlive = armed }
         self.watch[serverId] = w
         self.order[#self.order + 1] = serverId
     end
@@ -179,9 +181,20 @@ function Tracker:observe(serverId, isDead, now)
             return 'died'
         end
     else
-        w.armed = true   -- mob is alive -> ready to catch the next death
+        w.armed = true       -- mob is alive -> ready to catch the next death
+        w.seenAlive = true   -- confirmed it exists alive this session
     end
     return nil
+end
+
+-- Call when a watched mob can't be found right now (its corpse despawned, or it
+-- went out of render range).  Re-arms death detection so the *next* death resets
+-- the timer even if we never catch an "alive" frame between two quick deaths.
+-- Gated on seenAlive so a corpse that simply wasn't visible on the exact load
+-- frame still won't start a phantom timer (preserves the load-corpse fix).
+function Tracker:observeAbsent(serverId)
+    local w = self.watch[serverId]
+    if w and w.seenAlive then w.armed = true end
 end
 
 -- Advance timers.  Transitions dead->pop when the countdown hits 0, and removes

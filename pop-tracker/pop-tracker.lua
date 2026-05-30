@@ -307,9 +307,12 @@ local function poll_deaths(now)
                 chat(('"%s" defeated -> respawn timer started.'):format(tracker:label(serverId)))
                 persist_watch()  -- save popAt so the timer survives a reload
             end
+        else
+            -- Mob not found (corpse despawned / out of range): re-arm so the
+            -- next death we do see resets the timer, even on a fast repop.
+            pt.last_status[serverId] = nil
+            tracker:observeAbsent(serverId)
         end
-        -- If idx is nil the mob is out of render range; we simply can't see it
-        -- die right now, which matches "as long as I can see it defeated".
     end
 end
 

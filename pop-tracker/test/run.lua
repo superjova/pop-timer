@@ -140,6 +140,33 @@ do
     eq(r.text, '0:10', 'new full countdown from the new death')
 end
 
+print('despawn re-arms so a fast repop+rekill still resets the timer')
+do
+    local t = Tracker.new({ popDuration = 5 })
+    t:track(1, { respawn = 100 })          -- seenAlive = true
+    t:observe(1, true, 0)                   -- first death, popAt 100
+    eq(t:rows(50)[1].text, '0:50', 'counting down')
+    -- corpse despawns (we never catch an alive frame before it repops+dies)
+    t:observeAbsent(1)
+    -- next death we see resets the timer even though we never observed alive
+    eq(t:observe(1, true, 60), 'died', 'death after despawn resets')
+    eq(t:rows(60)[1].text, '1:40', 'timer reset to full from the new death')
+end
+
+print('despawn does NOT re-arm a never-seen-alive (load) mob')
+do
+    -- Restored from settings: seenAlive=false, armed=false.
+    local t = Tracker.new()
+    t:importWatch({ ['9'] = { mobName = 'NM', respawn = 60 } })
+    -- A corpse that was merely out of view at load: absent then dead.
+    t:observeAbsent(9)                      -- must NOT arm (never seen alive)
+    eq(t:observe(9, true, 0), nil, 'no phantom timer for load-time corpse')
+    eq(#t:rows(0), 0, 'still nothing shown')
+    -- Once actually seen alive, normal detection resumes.
+    t:observe(9, false, 5)                  -- seenAlive=true, armed
+    eq(t:observe(9, true, 10), 'died', 'witnessed kill after load works')
+end
+
 print('death with no respawn time -> unknown, then setRespawn starts it')
 do
     local t = Tracker.new()  -- no default respawn
