@@ -124,6 +124,22 @@ do
     eq(t:rows(30)[1].text, '0:10', 'fresh countdown')
 end
 
+print('kill during pop phase restarts the timer (regression)')
+do
+    local t = Tracker.new({ popDuration = 5 })
+    t:track(1, { respawn = 10 })
+    t:observe(1, true, 0)                 -- dies
+    t:update(10)                          -- countdown expires -> pop
+    eq(t:rows(11)[1].state, 'pop', 'in pop phase, line still present')
+    -- mob has already repopped in the world while we show "pop"; we see it alive
+    eq(t:observe(1, false, 11), nil, 're-arms during pop phase')
+    -- and is killed again before the pop line clears
+    eq(t:observe(1, true, 12), 'died', 'fresh death registered during pop phase')
+    local r = t:rows(12)[1]
+    eq(r.state, 'dead', 'pop replaced by a new countdown')
+    eq(r.text, '0:10', 'new full countdown from the new death')
+end
+
 print('death with no respawn time -> unknown, then setRespawn starts it')
 do
     local t = Tracker.new()  -- no default respawn

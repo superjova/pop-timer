@@ -49,7 +49,6 @@ local pt = {
     -- confirm in-game, then tell me if these need changing).
     death_status = { [2] = true, [3] = true },
     last_status  = {},  -- [serverId] = last seen status, for debug logging
-    window_open  = { true },
 }
 
 ------------------------------------------------------------------------------
@@ -264,9 +263,9 @@ local function handle_command(e)
             tracker.defaultRespawn = (s > 0) and s or nil
             settings.save()
             chat(('Default respawn %s.'):format(s > 0 and Tracker.formatClock(s) or 'disabled'))
-        elseif sub == 'show' then cfg.visible = true; pt.window_open[1] = true
+        elseif sub == 'show' then cfg.visible = true
         elseif sub == 'hide' then cfg.visible = false
-        elseif sub == 'toggle' then cfg.visible = not cfg.visible; pt.window_open[1] = cfg.visible
+        elseif sub == 'toggle' then cfg.visible = not cfg.visible
         elseif sub == 'showall' then
             cfg.showall = not cfg.showall
             chat(('Show alive watched mobs: %s.'):format(cfg.showall and 'on' or 'off'))
@@ -284,59 +283,67 @@ end
 -- per-frame: death detection + rendering
 ------------------------------------------------------------------------------
 
--- Poll the status of each watched, currently-alive mob and feed liveness to the
--- tracker so deaths are caught whether we or someone else lands the kill.
+-- Poll the status of each watched mob and feed liveness to the tracker so
+-- deaths are caught whether we or someone else lands the kill.  We poll even
+-- while a timer is running: if the mob repops and is killed again (e.g. before
+-- our countdown expires, or during the pop phase) observe() re-arms on the
+-- alive frame and onDeath() then restarts the timer for the fresh death.
 local function poll_deaths(now)
     local e = entity()
     if not e then return end
     for _, serverId in ipairs(tracker.order) do
         local w = tracker.watch[serverId]
-        -- Only need to watch mobs that aren't already counting down.
-        if not tracker.timers[serverId] then
-            local idx = find_index(serverId, w.index)
-            if idx then
-                w.index = idx
-                local status = e:GetStatus(idx)
-                if pt.debug and pt.last_status[serverId] ~= status then
-                    debugf('id=%d idx=%d status %s -> %s', serverId, idx,
-                        tostring(pt.last_status[serverId]), tostring(status))
-                end
-                pt.last_status[serverId] = status
-                local isDead = pt.death_status[status] == true
-                if tracker:observe(serverId, isDead, now) == 'died' then
-                    chat(('"%s" defeated -> respawn timer started.'):format(tracker:label(serverId)))
-                end
+        local idx = find_index(serverId, w.index)
+        if idx then
+            w.index = idx
+            local status = e:GetStatus(idx)
+            if pt.debug and pt.last_status[serverId] ~= status then
+                debugf('id=%d idx=%d status %s -> %s', serverId, idx,
+                    tostring(pt.last_status[serverId]), tostring(status))
             end
-            -- If idx is nil the mob is out of render range; we simply can't see
-            -- it die right now, which matches "as long as I can see it defeated".
+            pt.last_status[serverId] = status
+            local isDead = pt.death_status[status] == true
+            if tracker:observe(serverId, isDead, now) == 'died' then
+                chat(('"%s" defeated -> respawn timer started.'):format(tracker:label(serverId)))
+            end
         end
+        -- If idx is nil the mob is out of render range; we simply can't see it
+        -- die right now, which matches "as long as I can see it defeated".
     end
 end
+
+-- Headerless, always-on window: there is no title bar and no toggle.  It simply
+-- isn't drawn when there is nothing to show, so it appears on its own the moment
+-- a tracked mob dies and vanishes once its line is gone.  Still draggable (drag
+-- the body) and its position persists via imgui.ini.
+local WINDOW_FLAGS = bit.bor(
+    ImGuiWindowFlags_NoTitleBar,
+    ImGuiWindowFlags_AlwaysAutoResize,
+    ImGuiWindowFlags_NoFocusOnAppearing,
+    ImGuiWindowFlags_NoNav)
 
 local function render(now)
     if not cfg.visible then return end
 
+    local rows = tracker:rows(now)
+    -- Nothing to display -> don't draw the window at all.
+    if #rows == 0 and not cfg.showall then return end
+
     imgui.SetNextWindowBgAlpha(cfg.opacity)
     imgui.SetNextWindowSize({ 200, 0 }, ImGuiCond_FirstUseEver)
-    pt.window_open[1] = cfg.visible
-    -- Stable ###id so the visible title can change without resetting position.
-    if imgui.Begin(('Pop Tracker###poptracker'), pt.window_open, ImGuiWindowFlags_AlwaysAutoResize) then
-        local rows = tracker:rows(now)
-        if #rows == 0 then
-            imgui.TextDisabled('(no active timers)')
-        else
-            for _, r in ipairs(rows) do
-                if r.state == 'pop' then
-                    imgui.TextColored({ 0.4, 1.0, 0.4, 1.0 }, ('[%d] %s: pop'):format(r.slot, r.label))
-                elseif r.state == 'unknown' then
-                    imgui.TextColored({ 1.0, 0.8, 0.3, 1.0 }, ('[%d] %s: --:-- (set time)'):format(r.slot, r.label))
-                else
-                    imgui.Text(('[%d] %s: %s'):format(r.slot, r.label, r.text))
-                end
+    -- Stable ###id keeps the window's saved position even with no title.
+    if imgui.Begin('Pop Tracker###poptracker', nil, WINDOW_FLAGS) then
+        for _, r in ipairs(rows) do
+            if r.state == 'pop' then
+                imgui.TextColored({ 0.4, 1.0, 0.4, 1.0 }, ('[%d] %s: pop'):format(r.slot, r.label))
+            elseif r.state == 'unknown' then
+                imgui.TextColored({ 1.0, 0.8, 0.3, 1.0 }, ('[%d] %s: --:-- (set time)'):format(r.slot, r.label))
+            else
+                imgui.Text(('[%d] %s: %s'):format(r.slot, r.label, r.text))
             end
         end
         if cfg.showall then
-            imgui.Separator()
+            if #rows > 0 then imgui.Separator() end
             for _, id in ipairs(tracker.order) do
                 if not tracker.timers[id] then
                     imgui.TextDisabled(('%s: up'):format(tracker:label(id)))
@@ -345,9 +352,6 @@ local function render(now)
         end
     end
     imgui.End()
-
-    -- If the user closed the window via its [x], remember that.
-    if not pt.window_open[1] then cfg.visible = false end
 end
 
 ------------------------------------------------------------------------------
@@ -365,10 +369,16 @@ ashita.events.register('command', 'pt_command', function(e)
     handle_command(e)
 end)
 
+local POLL_INTERVAL = 0.2  -- seconds between death polls (cheap; ~5x/second)
+local last_poll = 0
+
 ashita.events.register('d3d_present', 'pt_present', function()
     if not tracker then return end
     local now = os.clock()
-    poll_deaths(now)
+    if now - last_poll >= POLL_INTERVAL then
+        last_poll = now
+        poll_deaths(now)
+    end
     tracker:update(now)
     render(now)
 end)

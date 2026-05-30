@@ -37,12 +37,17 @@ rename/untrack a mob that has already died (and can't be targeted).
 - **Watch list is persistent.** A mob stays tracked until `/untrack`. The names
   and respawn times you set are saved to `config/settings.lua` and restored on
   load.
-- **The timer line is transient.** When a watched mob dies, a line
-  `[n] <label>: <countdown>` appears in a transparent, draggable window. The
-  window remembers its own position (don't drag-fight it; position auto-saves).
+- **The window is headerless and always on.** There's no title bar and no
+  toggle to fiddle with: the transparent, draggable window simply isn't drawn
+  while there's nothing to show, and appears on its own the moment a tracked mob
+  dies (showing `[n] <label>: <countdown>`). Drag the body to move it; its
+  position persists via `imgui.ini`. (`/pt hide` is a master off-switch if you
+  ever want it gone entirely.)
 - **Pop.** When the countdown hits zero the line shows `pop` (green) for ~5
   seconds, then the line disappears — but the mob is **still tracked**, so the
-  next time it dies a fresh timer line appears.
+  next time it dies a fresh timer line appears. Killing it again *during* the
+  countdown or pop phase (e.g. it repopped faster than your set time) restarts
+  the timer from the new death.
 - **Label.** Defaults to the mob's server ID (so you can tell apart three
   identical "Sheep"). Rename it to whatever you like.
 - **No target = nothing happens** on `/track`.
